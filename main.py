@@ -8,6 +8,7 @@ import carla
 
 import argparse
 import logging
+from timeit import default_timer as timer
 
 import pygame
 
@@ -27,6 +28,7 @@ def game_loop(args):
     try:
         client = carla.Client(args.host, args.port)
         client.set_timeout(2000.0)
+        timestamp = 1.0 / float( args.sample_rate )
 
         sim_world = client.get_world()
         if args.sync:
@@ -34,6 +36,7 @@ def game_loop(args):
             settings = sim_world.get_settings()
             if not settings.synchronous_mode:
                 settings.synchronous_mode = True
+                settings.fixed_delta_seconds = timestamp
             sim_world.apply_settings(settings)
 
             traffic_manager = client.get_trafficmanager()
@@ -59,25 +62,27 @@ def game_loop(args):
         
         logging.info(help_str)
         
-        timestamp = 1.0 / float( args.sample_rate )
+        collector = SensorCollector(output_path=output_path, world=world)
         
-        collector = SensorCollector(output_path=output_path, timestamp=timestamp, world=world)
-        collector.start_thread()
-
         if args.sync:
             sim_world.tick()
         else:
             sim_world.wait_for_tick()
+                    
+        collector.start()
 
         clock = pygame.time.Clock()
         while True:
             clock.tick_busy_loop(args.sample_rate)
             if args.sync:
                 sim_world.tick()
-            clock.tick_busy_loop(60)
             if controller.parse_events(client, world, clock, args.sync):
                 return
             world.tick(clock)
+            snapshot = world.get_simulation_snapshot()
+            timestamp = snapshot.timestamp.elapsed_seconds
+            frame = snapshot.frame
+            collector.record(timestamp, frame)
             world.render(display)
             pygame.display.flip()
 
@@ -158,6 +163,12 @@ def main():
         metavar='o',
         default='sample.csv',
         help='Path to output file where data will be stored')
+    argparser.add_argument(
+        '--cfg',
+        metavar='c',
+        default=None,
+        required=True,
+        help='Path to the config file with sensors definition')
     args = argparser.parse_args()
 
     args.width, args.height = [int(x) for x in args.res.split('x')]
