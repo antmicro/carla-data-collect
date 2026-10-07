@@ -6,53 +6,99 @@
 Provides implementation for sensor data collector.
 """
 
+import csv
 from pathlib import Path
-import threading
-import time
+from typing import List, Union
 
 from carla_data_collector.world.world import World
+
 
 class SensorCollector:
     """
     Data collector for collecting and saving data to CSV file.
     """
-    
-    def __init__(
-        self,
-        output_path: Path,
-        timestamp: float,
-        world: World
-    ):
-        self._output_path = output_path
+
+    def __init__(self, output_path: Union[Path, str], world: World):
+        """
+        Sensor collector initialization.
+
+        Parameters
+        ----------
+        output_path : Path
+            Output CSV path.
+        world : World
+            Simulation world used to get
+            additional data.
+
+        """
+        self._output_path = Path(output_path)
         self._world = world
         self._file = None
-        self._thread = None
-        self._timestamp = timestamp
-        self._running = False
-        self._ticks = 0.0
-        
-    def _collector_loop(self):
-        while self._running:
-            self.record()
-            time.sleep(self._timestamp)
-        
-    def start_thread(self):
-        self.start()
-        self._running = True
-        self._thread = threading.Thread(target=self._collector_loop)
-        self._thread.start()
-        
+        self._writer = None
+        self._start_time = None
+        self._last_frame = None
+        self._header = self._generate_header()
+
     def start(self):
+        """
+        Initialize output CSV file with
+        sensor readings.
+        """
         self._file = open(self._output_path, "w")
-        # In the future it will be based on defined sensors
-        print("timestamp,brake,handbrake,acc_x,acc_y,acc_z", file=self._file)
-        
-    def record(self):
-        c = self._world.player.get_control()
-        accel = self._world.imu_sensor.accelerometer
-        print(self._ticks, float(c.brake), float(c.hand_brake), *accel, sep=",", file=self._file)
-        self._ticks += self._timestamp
-    
+
+        self._writer = csv.writer(self._file, delimiter=";")
+        self._writer.writerow(self._header)
+
+    def record(self, timestamp: float, frame: int):
+        """
+        Collect and save data from sensors
+        registered in simulation.
+
+        Parameters
+        ----------
+        timestamp : float
+            Elapsed time from simulation start
+            in seconds.
+        frame : int
+            Current simulation frame id.
+
+        """
+        if self._start_time is None:
+            self._start_time = timestamp
+        if self._last_frame == frame:
+            return
+        self._last_frame = frame
+
+        sensors = self._world.sensors
+        data = [timestamp - self._start_time]
+
+        for sensor in sensors:
+            for _, val in sensor.get_data(self._world).items():
+                data.append(val)
+
+        self._writer.writerow(data)
+
     def stop(self):
-        self._running = False
+        """Stop collecting data."""
         self._file.close()
+
+    def _generate_header(self) -> List[str]:
+        """
+        Generates CSV header.
+
+        Returns
+        -------
+        List[str]
+            List with columns name.
+
+        """
+        sensors = self._world.sensors
+
+        header = ["timestamp"]
+
+        for sensor in sensors:
+            name = sensor.name
+            for attr in sensor.get_data(self._world).keys():
+                header.append(f"{name}_{attr}")
+
+        return header
