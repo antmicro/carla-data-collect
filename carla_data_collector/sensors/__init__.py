@@ -12,6 +12,7 @@ from carla_data_collector.sensors.imu import IMUSensor
 from carla_data_collector.sensors.lane_invasion import LaneInvasionSensor
 from carla_data_collector.sensors.radar import RadarSensor
 from carla_data_collector.sensors.speed import SpeedSensor
+from carla_data_collector.sensors.keystroke import KeyStrokeSensor
 
 __all__ = [
     "CollisionSensor",
@@ -21,4 +22,5 @@ __all__ = [
     "RadarSensor",
     "SpeedSensor",
     "VehicleStateSensor",
+    "KeyStrokeSensor"
 ]

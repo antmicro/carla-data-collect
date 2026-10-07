@@ -6,9 +6,11 @@
 A module holding definition for Carla simulator world.
 """
 
+import argparse
 import logging
 import random
 import sys
+from typing import List
 
 import carla
 import pygame
@@ -25,11 +27,25 @@ from carla_data_collector.utils import (
 
 
 class World:
-    """
-    World definition used by Carla simulation.
-    """
-    
-    def __init__(self, carla_world, hud, args):
+    """World definition used by Carla simulation."""
+
+    def __init__(
+        self, carla_world: carla.World, hud: HUD, args: argparse.Namespace
+    ):
+        """
+        Initialize simulation World.
+
+        Parameters
+        ----------
+        carla_world : carla.World
+            Object representing Carla's simulation.
+        hud : HUD
+            Head up display object.
+        args : argparse.Namespace
+            Namespace with additional parameters
+            used for object initialization.
+
+        """
         self.world = carla_world
         self.sync = args.sync
         self.actor_role_name = args.rolename
@@ -38,9 +54,10 @@ class World:
             self.map = self.world.get_map()
         except RuntimeError as error:
             logging.error(
-            f'RuntimeError: {error}'
-            '  The server could not send the OpenDRIVE (.xodr) file:'
-            '  Make sure it exists, has the same name of your town, and is correct.'
+                f"RuntimeError: {error}"
+                "  The server could not send the OpenDRIVE (.xodr) file:"
+                "  Make sure it exists, has the same name of your town, "
+                "and is correct."
             )
             sys.exit(1)
         self.hud = hud
@@ -51,6 +68,8 @@ class World:
         self._actor_filter = args.filter
         self._actor_generation = args.generation
         self._gamma = args.gamma
+        self.collects_events = False
+        self._events_collected = []
         self.restart()
         self.world.on_tick(hud.on_world_tick)
         self.recording_enabled = False
@@ -70,76 +89,97 @@ class World:
             carla.MapLayer.Props,
             carla.MapLayer.StreetLights,
             carla.MapLayer.Walls,
-            carla.MapLayer.All
+            carla.MapLayer.All,
         ]
-        
-    def _load_sensor_config(self):
-        self.sensors = []
-        with open(self.config_file_path,"r") as file:
-            config = yaml.safe_load(file)
-            
-            sensors = config["sensors"]
-            
-            for sensor in sensors:
-                sensor_type = get_class_from_name(sensor["type"])
 
-                name = sensor["name"]
-                attributes = sensor.get("attributes",{})
-                trans = sensor.get("transform", None)
-                if trans is None:
-                    transform = None
-                else:
-                    tl = trans.get("translate", None)
-                    if tl is None:
-                        translate = carla.Location()
-                    else:
-                        translate = carla.Location(
-                            x = tl["x"],
-                            y = tl["y"],
-                            z = tl["z"]
-                        )
-                        ro = trans.get("rotation", None)
-                        if ro is None:
-                            rotation = carla.Rotation()
-                        else:
-                            rotation = carla.Rotation(
-                                pitch = ro["pitch"],
-                                yaw = ro["yaw"],
-                                roll = ro["roll"]
-                            )
-                        transform = carla.Transform(translate, rotation)
+    def collect_event(self, event: pygame.event.Event):
+        """
+        Function for collecting and parsing
+        pygame's events.
 
-                kwargs = {**attributes, "hud": self.hud}
+        Parameters
+        ----------
+        event : pygame.event.Event
+            Object represeting pygame's Event.
 
-                sensor_obj = sensor_type(name, self.player, transform, **kwargs)
-                self.sensors.append(sensor_obj)
+        """
+        if not self.collects_events:
+            return
+
+        prefix = ""
+        if event.type == pygame.KEYDOWN:
+            prefix = "keydown_"
+        elif event.type == pygame.KEYUP:
+            prefix = "keyup_"
+        else:
+            return
+
+        key_name = pygame.key.name(event.key)
+
+        self._events_collected.append(f"{prefix}{key_name}")
+
+    def get_last_events(self) -> List[str]:
+        """
+        Returns events collected previously by
+        collect_event function.
+
+        Returns
+        -------
+        List[str]
+            List with names of collected
+            events.
+
+        """
+        output = self._events_collected
+        self._events_collected = []
+        return output
 
     def restart(self):
+        """Restart the simulation."""
+        self._events_collected = []
         self.player_max_speed = 1.589
         self.player_max_speed_fast = 3.713
         # Keep same camera config if the camera manager exists.
-        cam_index = self.camera_manager.index if self.camera_manager is not None else 0
-        cam_pos_index = self.camera_manager.transform_index if self.camera_manager is not None else 0
+        cam_index = (
+            self.camera_manager.index if self.camera_manager is not None else 0
+        )
+        cam_pos_index = (
+            self.camera_manager.transform_index
+            if self.camera_manager is not None
+            else 0
+        )
         # Get a random blueprint.
-        blueprint_list = get_actor_blueprints(self.world, self._actor_filter, self._actor_generation)
+        blueprint_list = get_actor_blueprints(
+            self.world, self._actor_filter, self._actor_generation
+        )
         if not blueprint_list:
-            raise ValueError("Couldn't find any blueprints with the specified filters")
+            raise ValueError(
+                "Couldn't find any blueprints with the specified filters"
+            )
         blueprint = random.choice(blueprint_list)
-        blueprint.set_attribute('role_name', self.actor_role_name)
-        if blueprint.has_attribute('terramechanics'):
-            blueprint.set_attribute('terramechanics', 'true')
-        if blueprint.has_attribute('color'):
-            color = random.choice(blueprint.get_attribute('color').recommended_values)
-            blueprint.set_attribute('color', color)
-        if blueprint.has_attribute('driver_id'):
-            driver_id = random.choice(blueprint.get_attribute('driver_id').recommended_values)
-            blueprint.set_attribute('driver_id', driver_id)
-        if blueprint.has_attribute('is_invincible'):
-            blueprint.set_attribute('is_invincible', 'true')
+        blueprint.set_attribute("role_name", self.actor_role_name)
+        if blueprint.has_attribute("terramechanics"):
+            blueprint.set_attribute("terramechanics", "true")
+        if blueprint.has_attribute("color"):
+            color = random.choice(
+                blueprint.get_attribute("color").recommended_values
+            )
+            blueprint.set_attribute("color", color)
+        if blueprint.has_attribute("driver_id"):
+            driver_id = random.choice(
+                blueprint.get_attribute("driver_id").recommended_values
+            )
+            blueprint.set_attribute("driver_id", driver_id)
+        if blueprint.has_attribute("is_invincible"):
+            blueprint.set_attribute("is_invincible", "true")
         # set the max speed
-        if blueprint.has_attribute('speed'):
-            self.player_max_speed = float(blueprint.get_attribute('speed').recommended_values[1])
-            self.player_max_speed_fast = float(blueprint.get_attribute('speed').recommended_values[2])
+        if blueprint.has_attribute("speed"):
+            self.player_max_speed = float(
+                blueprint.get_attribute("speed").recommended_values[1]
+            )
+            self.player_max_speed_fast = float(
+                blueprint.get_attribute("speed").recommended_values[2]
+            )
 
         # Spawn the player.
         if self.player is not None:
@@ -154,12 +194,16 @@ class World:
         while self.player is None:
             if not self.map.get_spawn_points():
                 logging.error(
-                    'There are no spawn points available in your map/town.'
-                    'Please add some Vehicle Spawn Point to your UE4 scene.'
+                    "There are no spawn points available in your map/town."
+                    "Please add some Vehicle Spawn Point to your UE4 scene."
                 )
                 sys.exit(1)
             spawn_points = self.map.get_spawn_points()
-            spawn_point = random.choice(spawn_points) if spawn_points else carla.Transform()
+            spawn_point = (
+                random.choice(spawn_points)
+                if spawn_points
+                else carla.Transform()
+            )
             self.player = self.world.try_spawn_actor(blueprint, spawn_point)
             self.show_vehicle_telemetry = False
             self.modify_vehicle_physics(self.player)
@@ -168,45 +212,94 @@ class World:
         self.camera_manager.transform_index = cam_pos_index
         self.camera_manager.set_sensor(cam_index, notify=False)
         actor_type = get_actor_display_name(self.player)
-        
+
         if self.config_file_path is not None:
             self._load_sensor_config()
-        
+
         self.hud.notification(actor_type)
 
         if self.sync:
             self.world.tick()
         else:
             self.world.wait_for_tick()
-    
-    def get_simulation_snapshot(self):
+
+    def get_simulation_snapshot(self) -> carla.WorldSnapshot:
+        """
+        Returns current simulation
+        state.
+
+        Returns
+        -------
+        carla.WorldSnapshot
+            Current state of the simulation.
+
+        """
         snapshot = self.world.get_snapshot()
         return snapshot
 
-    def next_weather(self, reverse=False):
+    def next_weather(self, reverse: bool = False):
+        """
+        Select next weather in simulation.
+
+        Parameters
+        ----------
+        reverse : bool
+            When set to true weather is selected
+            in reversed order.
+
+        """
         self._weather_index += -1 if reverse else 1
         self._weather_index %= len(self._weather_presets)
         preset = self._weather_presets[self._weather_index]
-        self.hud.notification('Weather: %s' % preset[1])
+        self.hud.notification(f"Weather: {preset[1]}")
         self.player.get_world().set_weather(preset[0])
 
-    def next_map_layer(self, reverse=False):
+    def next_map_layer(self, reverse: bool = False):
+        """
+        Select next map layer.
+
+        Parameters
+        ----------
+        reverse : bool
+            When set to true layer is selected
+            in reversed order.
+
+        """
         self.current_map_layer += -1 if reverse else 1
         self.current_map_layer %= len(self.map_layer_names)
         selected = self.map_layer_names[self.current_map_layer]
-        self.hud.notification('LayerMap selected: %s' % selected)
+        self.hud.notification(f"LayerMap selected: {selected}")
 
-    def load_map_layer(self, unload=False):
+    def load_map_layer(self, unload: bool = False):
+        """
+        Load or unload selected previously map layer.
+
+        Parameters
+        ----------
+        unload : bool
+            When set to true layer is unloaded,
+            loaded otherwise.
+
+        """
         selected = self.map_layer_names[self.current_map_layer]
         if unload:
-            self.hud.notification('Unloading map layer: %s' % selected)
+            self.hud.notification(f"Unloading map layer: {selected}")
             self.world.unload_map_layer(selected)
         else:
-            self.hud.notification('Loading map layer: %s' % selected)
+            self.hud.notification(f"Loading map layer: {selected}")
             self.world.load_map_layer(selected)
 
-    def modify_vehicle_physics(self, actor):
-        #If actor is not a vehicle, we cannot use the physics control
+    def modify_vehicle_physics(self, actor: carla.Actor):
+        """
+        Enables sweep wheel collision in actor.
+
+        Parameters
+        ----------
+        actor : carla.Actor
+            Actor represeting vehicle.
+
+        """
+        # If actor is not a vehicle, we cannot use the physics control
         try:
             physics_control = actor.get_physics_control()
             physics_control.use_sweep_wheel_collision = True
@@ -214,19 +307,46 @@ class World:
         except Exception:
             pass
 
-    def tick(self, clock):
+    def tick(self, clock: pygame.time.Clock):
+        """
+        Update HUD called every application's
+        frame.
+
+        Parameters
+        ----------
+        clock : pygame.time.Clock
+            PyGame clock used for time
+            measurment.
+
+        """
         self.hud.tick(self, clock)
 
-    def render(self, display):
+    def render(self, display: pygame.Surface):
+        """
+        Render simulation camera view and
+        HUD.
+
+        Parameters
+        ----------
+        display : pygame.Surface
+           PyGame's image onto which scene
+           will be rendered.
+
+        """
         self.camera_manager.render(display)
         self.hud.render(display)
 
     def destroy_sensors(self):
+        """Unload camera object."""
         self.camera_manager.sensor.destroy()
         self.camera_manager.sensor = None
         self.camera_manager.index = None
 
     def destroy(self):
+        """
+        Unload sensors and player
+        objects.
+        """
         for sensor in self.sensors:
             if sensor.sensor is not None:
                 sensor.sensor.stop()
@@ -235,7 +355,8 @@ class World:
             self.player.destroy()
 
     def _load_sensor_config(self):
-        """Load sensors from provided
+        """
+        Load sensors from provided
         configuration file.
         """
         self.sensors = []
