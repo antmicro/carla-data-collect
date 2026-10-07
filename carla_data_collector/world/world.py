@@ -9,15 +9,22 @@ A module holding definition for Carla simulator world.
 import logging
 import random
 import sys
-import carla
 
-from carla_data_collector.sensors import CollisionSensor, IMUSensor, GnssSensor, LaneInvasionSensor, RadarSensor
+import carla
+import pygame
+import yaml
 
 from carla_data_collector.camera.camera_manager import CameraManager
+from carla_data_collector.hud.hud import HUD
+from carla_data_collector.obj_gen import get_sensor_from_name
+from carla_data_collector.utils import (
+    find_weather_presets,
+    get_actor_blueprints,
+    get_actor_display_name,
+)
 
-from carla_data_collector.utils import find_weather_presets, get_actor_display_name, get_actor_blueprints
 
-class World(object):
+class World:
     """
     World definition used by Carla simulation.
     """
@@ -26,22 +33,18 @@ class World(object):
         self.world = carla_world
         self.sync = args.sync
         self.actor_role_name = args.rolename
+        self.config_file_path = args.cfg
         try:
             self.map = self.world.get_map()
         except RuntimeError as error:
             logging.error(
-            'RuntimeError: {}'
+            f'RuntimeError: {error}'
             '  The server could not send the OpenDRIVE (.xodr) file:'
-            '  Make sure it exists, has the same name of your town, and is correct.'.format(error)
+            '  Make sure it exists, has the same name of your town, and is correct.'
             )
             sys.exit(1)
         self.hud = hud
         self.player = None
-        self.collision_sensor = None
-        self.lane_invasion_sensor = None
-        self.gnss_sensor = None
-        self.imu_sensor = None
-        self.radar_sensor = None
         self.camera_manager = None
         self._weather_presets = find_weather_presets()
         self._weather_index = 0
@@ -69,6 +72,47 @@ class World(object):
             carla.MapLayer.Walls,
             carla.MapLayer.All
         ]
+        
+    def _load_sensor_config(self):
+        self.sensors = []
+        with open(self.config_file_path,"r") as file:
+            config = yaml.safe_load(file)
+            
+            sensors = config["sensors"]
+            
+            for sensor in sensors:
+                sensor_type = get_class_from_name(sensor["type"])
+
+                name = sensor["name"]
+                attributes = sensor.get("attributes",{})
+                trans = sensor.get("transform", None)
+                if trans is None:
+                    transform = None
+                else:
+                    tl = trans.get("translate", None)
+                    if tl is None:
+                        translate = carla.Location()
+                    else:
+                        translate = carla.Location(
+                            x = tl["x"],
+                            y = tl["y"],
+                            z = tl["z"]
+                        )
+                        ro = trans.get("rotation", None)
+                        if ro is None:
+                            rotation = carla.Rotation()
+                        else:
+                            rotation = carla.Rotation(
+                                pitch = ro["pitch"],
+                                yaw = ro["yaw"],
+                                roll = ro["roll"]
+                            )
+                        transform = carla.Transform(translate, rotation)
+
+                kwargs = {**attributes, "hud": self.hud}
+
+                sensor_obj = sensor_type(name, self.player, transform, **kwargs)
+                self.sensors.append(sensor_obj)
 
     def restart(self):
         self.player_max_speed = 1.589
@@ -120,14 +164,14 @@ class World(object):
             self.show_vehicle_telemetry = False
             self.modify_vehicle_physics(self.player)
         # Set up the sensors.
-        self.collision_sensor = CollisionSensor(self.player, self.hud)
-        self.lane_invasion_sensor = LaneInvasionSensor(self.player, self.hud)
-        self.gnss_sensor = GnssSensor(self.player)
-        self.imu_sensor = IMUSensor(self.player)
         self.camera_manager = CameraManager(self.player, self.hud, self._gamma)
         self.camera_manager.transform_index = cam_pos_index
         self.camera_manager.set_sensor(cam_index, notify=False)
         actor_type = get_actor_display_name(self.player)
+        
+        if self.config_file_path is not None:
+            self._load_sensor_config()
+        
         self.hud.notification(actor_type)
 
         if self.sync:
@@ -161,13 +205,6 @@ class World(object):
             self.hud.notification('Loading map layer: %s' % selected)
             self.world.load_map_layer(selected)
 
-    def toggle_radar(self):
-        if self.radar_sensor is None:
-            self.radar_sensor = RadarSensor(self.player)
-        elif self.radar_sensor.sensor is not None:
-            self.radar_sensor.sensor.destroy()
-            self.radar_sensor = None
-
     def modify_vehicle_physics(self, actor):
         #If actor is not a vehicle, we cannot use the physics control
         try:
@@ -190,17 +227,53 @@ class World(object):
         self.camera_manager.index = None
 
     def destroy(self):
-        if self.radar_sensor is not None:
-            self.toggle_radar()
-        sensors = [
-            self.camera_manager.sensor,
-            self.collision_sensor.sensor,
-            self.lane_invasion_sensor.sensor,
-            self.gnss_sensor.sensor,
-            self.imu_sensor.sensor]
-        for sensor in sensors:
-            if sensor is not None:
-                sensor.stop()
-                sensor.destroy()
+        for sensor in self.sensors:
+            if sensor.sensor is not None:
+                sensor.sensor.stop()
+                sensor.sensor.destroy()
         if self.player is not None:
             self.player.destroy()
+
+    def _load_sensor_config(self):
+        """Load sensors from provided
+        configuration file.
+        """
+        self.sensors = []
+        with open(self.config_file_path, "r") as file:
+            config = yaml.safe_load(file)
+
+            sensors = config["sensors"]
+
+            for sensor in sensors:
+                sensor_type = get_sensor_from_name(sensor["type"])
+
+                name = sensor["name"]
+                attributes = sensor.get("attributes", {})
+                trans = sensor.get("transform", None)
+                if trans is None:
+                    transform = None
+                else:
+                    tl = trans.get("translate", None)
+                    if tl is None:
+                        translate = carla.Location()
+                    else:
+                        translate = carla.Location(
+                            x=tl["x"], y=tl["y"], z=tl["z"]
+                        )
+                        ro = trans.get("rotation", None)
+                        if ro is None:
+                            rotation = carla.Rotation()
+                        else:
+                            rotation = carla.Rotation(
+                                pitch=ro["pitch"],
+                                yaw=ro["yaw"],
+                                roll=ro["roll"],
+                            )
+                        transform = carla.Transform(translate, rotation)
+
+                kwargs = {**attributes, "hud": self.hud}
+
+                sensor_obj = sensor_type(
+                    name, self.player, transform, **kwargs
+                )
+                self.sensors.append(sensor_obj)
