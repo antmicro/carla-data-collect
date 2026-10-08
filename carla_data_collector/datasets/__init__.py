@@ -6,6 +6,6 @@
 A module holding scripts for generating dataset from collected sensory data.
 """
 
-from carla_data_collector.datasets.minispot import MiniSpot
+from carla_data_collector.datasets.imu_anomaly import IMUAnomalyDataset
 
-__all__ = ["MiniSpot"]
+__all__ = ["IMUAnomalyDataset"]
