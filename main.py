@@ -8,7 +8,7 @@ import carla
 
 import argparse
 import logging
-from timeit import default_timer as timer
+import yaml
 
 import pygame
 
@@ -16,6 +16,8 @@ from carla_data_collector.world.world import World
 from carla_data_collector.hud.hud import HUD
 from carla_data_collector.control.keyboard import KeyboardControl
 from carla_data_collector.data_collector.sensor_collector import SensorCollector
+
+from carla_data_collector.obj_gen import get_class_from_name
 
 def game_loop(args):
     pygame.init()
@@ -101,9 +103,35 @@ def game_loop(args):
 
         pygame.quit()
 
+def generate_dataset(args):
+        
+    config_path = args.cfg
+    input_path = args.input
+    
+    with open(config_path,"r") as file:
+        config = yaml.safe_load(file)
+        
+    if "dataset" not in config:
+        raise ValueError("Missing dataset entry.")
+
+    dataset_cfg = config["dataset"]
+    dataset_type = get_class_from_name(dataset_cfg["type"])
+
+    attributes = dataset_cfg["attributes"]
+    dataset = dataset_type(input_path, **attributes)
+    
+    dataset.generate_dataset()
+    logging.info(f"Dataset generated and saved at: {dataset.get_output_path()}")
+
 def main():
     argparser = argparse.ArgumentParser(
         description='CARLA Manual Control Client')
+    argparser.add_argument(
+        'mode',
+        default='sim',
+        choices=['sim', 'dataset'],
+        help='Select between collecting data in simulation and dataset generation.'
+    )
     argparser.add_argument(
         '-v', '--verbose',
         action='store_true',
@@ -172,15 +200,17 @@ def main():
     args = argparser.parse_args()
 
     args.width, args.height = [int(x) for x in args.res.split('x')]
+    mode = args.mode
 
     log_level = logging.DEBUG if args.debug else logging.INFO
     logging.basicConfig(format='%(levelname)s: %(message)s', level=log_level)
 
-    logging.info('listening to server %s:%s', args.host, args.port)
-
     try:
-
-        game_loop(args)
+        if mode == 'sim':
+            logging.info('listening to server %s:%s', args.host, args.port)
+            game_loop(args)
+        elif mode == 'dataset':
+            generate_dataset(args)
 
     except KeyboardInterrupt:
         logging.info('\nCancelled by user. Bye!')
