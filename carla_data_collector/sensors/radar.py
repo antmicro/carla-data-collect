@@ -6,7 +6,6 @@
 Provides implementation for radar sensor.
 """
 
-import weakref
 import math
 import weakref
 from typing import TYPE_CHECKING, Optional
@@ -21,7 +20,8 @@ if TYPE_CHECKING:
 
 
 class RadarSensor(Base):
-    """Radar sensor handler.
+    """
+    Radar sensor handler.
 
     Avaliable attributes:
     - horizontal_fov: float
@@ -41,7 +41,8 @@ class RadarSensor(Base):
         transform: Optional[carla.Transform] = None,
         **kwargs: dict,
     ):
-        """Class for reading data from radar sensor.
+        """
+        Class for reading data from radar sensor.
 
         Parameters
         ----------
