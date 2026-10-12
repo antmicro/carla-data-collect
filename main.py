@@ -18,10 +18,12 @@ from carla_data_collector.control.keyboard import KeyboardControl
 from carla_data_collector.data_collector.sensor_collector import SensorCollector
 
 from carla_data_collector.obj_gen import get_class_from_name
+from carla_data_collector.utils import get_list_of_docs_objects
 
 def game_loop(args):
     pygame.init()
     pygame.font.init()
+    args.width, args.height = [int(x) for x in args.res.split('x')]
     world = None
     original_settings = None
     
@@ -122,21 +124,25 @@ def generate_dataset(args):
     
     dataset.generate_dataset()
     logging.info(f"Dataset generated and saved at: {dataset.get_output_path()}")
+    
+def manual(args):
+    pass
 
-def main():
+def manual_parser(args):
     argparser = argparse.ArgumentParser(
-        description='CARLA Manual Control Client')
+                    description='CARLA Manual Control Client Manual')
+    
     argparser.add_argument(
-        'mode',
-        default='sim',
-        choices=['sim', 'dataset'],
-        help='Select between collecting data in simulation and dataset generation.'
-    )
-    argparser.add_argument(
-        '-v', '--verbose',
-        action='store_true',
-        dest='debug',
-        help='print debug information')
+        'object_name',
+        choices=get_list_of_docs_objects(),
+        help='Name of the object to show info about.')
+    
+    return argparser.parse_args(args)
+
+def game_parser(args):
+    argparser = argparse.ArgumentParser(
+            description='CARLA Manual Control Client Simulation')
+    
     argparser.add_argument(
         '--host',
         metavar='H',
@@ -197,9 +203,49 @@ def main():
         default=None,
         required=True,
         help='Path to the config file with sensors definition')
-    args = argparser.parse_args()
+    
+    return argparser.parse_args(args)
 
-    args.width, args.height = [int(x) for x in args.res.split('x')]
+def dataset_parser(args):
+    argparser = argparse.ArgumentParser(
+                description='CARLA Manual Control Client Dataset generator')
+    
+    argparser.add_argument(
+        '--input',
+        metavar='o',
+        default='sample.csv',
+        help='Path to file with readings')
+    argparser.add_argument(
+        '--cfg',
+        metavar='c',
+        default=None,
+        required=True,
+        help='Path to the config file with sensors definition')
+    
+    return argparser.parse_args(args)
+
+def parse_app_args():
+    argparser = argparse.ArgumentParser(
+        description='CARLA Manual Control Client',
+        add_help = False
+        )
+    
+    argparser.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        dest='debug',
+        help='print debug information')
+    argparser.add_argument(
+        'mode',
+        default='sim',
+        choices=['sim', 'dataset', 'man'],
+        help='Select between collecting data in simulation, dataset generation or manual description.'
+    )
+    return argparser.parse_known_args()
+    
+def main():
+    args, unparsed = parse_app_args()
+
     mode = args.mode
 
     log_level = logging.DEBUG if args.debug else logging.INFO
@@ -207,10 +253,15 @@ def main():
 
     try:
         if mode == 'sim':
+            args = game_parser(unparsed)
             logging.info('listening to server %s:%s', args.host, args.port)
             game_loop(args)
         elif mode == 'dataset':
+            args = dataset_parser(unparsed)
             generate_dataset(args)
+        elif mode == 'man':
+            args = manual_parser(unparsed)
+            manual(args)
 
     except KeyboardInterrupt:
         logging.info('\nCancelled by user. Bye!')
