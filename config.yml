@@ -13,22 +13,18 @@ sensors:
     attributes:
       accelerometer_limits: 199.9
       gyroscope_limits: 99.9
-  - type: IMUSensor
-    name: "imu_2"
-    transform:
-      translate: 
-        x: 0
-        y: 0
-        z: 0.5
-      rotation:
-        pitch: 90
-        yaw: 0
-        roll: 0
-    attributes:
-      accelerometer_limits: 99.9
-      gyroscope_limits: 99.9
   - type: CollisionSensor
     name: "col_1"
+  - type: SpeedSensor
+    name: "speed"
+  - type: GnssSensor
+    name: "gnss"
+  - type: KeyStrokeSensor
+    name: "keys"
+  - type: LaneInvasionSensor
+    name: "lane"
+  - type: VehicleStateSensor
+    name: "vehicle"
 dataset:
   type: IMUAnomalyDataset
   attributes:
@@ -38,3 +34,6 @@ dataset:
     accel_threshold: 0
     sensor_collision_name: "col_1"
     collision_intensity_threshold: 1000.0
+    detect_sudden_speeding: true
+    detect_sudden_braking: true
+    detect_sudden_steering: true
