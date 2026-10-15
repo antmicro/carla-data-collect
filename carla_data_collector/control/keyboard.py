@@ -10,6 +10,9 @@ Use ARROWS or WASD keys for control.
     W            : throttle
     S            : brake
     A/D          : steer left/right
+    Up           : max throttle
+    Down         : max braking
+    Left/Right   : sudden steer left/right
     Q            : toggle reverse
     Space        : hand-brake
     P            : toggle autopilot
@@ -21,6 +24,8 @@ Use ARROWS or WASD keys for control.
     SHIFT + L    : toggle high beam
     Z/X          : toggle right/left blinker
     I            : toggle interior light
+
+    E            : marks stamp as an anomaly
 
     TAB          : change camera view
     ` or N       : next sensor
@@ -452,7 +457,10 @@ class KeyboardControl:
             Passed time in milliseconds.
 
         """
-        if keys[K_UP] or keys[K_w]:
+        if keys[K_UP]:
+            if not self._ackermann_enabled:
+                self._control.throttle = 1.0
+        elif keys[K_w]:
             if not self._ackermann_enabled:
                 self._control.throttle = min(
                     self._control.throttle + 0.1, 1.00
@@ -465,7 +473,10 @@ class KeyboardControl:
             if not self._ackermann_enabled:
                 self._control.throttle = 0.0
 
-        if keys[K_DOWN] or keys[K_s]:
+        if keys[K_DOWN]:
+            if not self._ackermann_enabled:
+                self._control.brake = 1.0
+        elif keys[K_s]:
             if not self._ackermann_enabled:
                 self._control.brake = min(self._control.brake + 0.2, 1)
             else:
@@ -485,12 +496,16 @@ class KeyboardControl:
                 self._control.brake = 0
 
         steer_increment = 5e-4 * milliseconds
-        if keys[K_LEFT] or keys[K_a]:
+        if keys[K_LEFT]:
+            self._steer_cache = -1.0
+        elif keys[K_RIGHT]:
+            self._steer_cache = 1.0
+        elif keys[K_a]:
             if self._steer_cache > 0:
                 self._steer_cache = 0
             else:
                 self._steer_cache -= steer_increment
-        elif keys[K_RIGHT] or keys[K_d]:
+        elif keys[K_d]:
             if self._steer_cache < 0:
                 self._steer_cache = 0
             else:
